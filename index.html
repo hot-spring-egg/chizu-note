@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>チズノート</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            terracotta: '#E07A5F',
+            sage: '#81B29A',
+            bluegrey: '#3D405B',
+            cream: '#F4F1DE',
+            mustard: '#F2CC8F',
+          },
+          fontFamily: {
+            rounded: ['"M PLUS Rounded 1c"', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  
+  <!-- React & ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  
+  <!-- Babel -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- D3.js (SVG地図描画用) -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;700&display=swap" rel="stylesheet">
+  
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      touch-action: manipulation;
+      user-select: none;
+      height: 100dvh; 
+      width: 100vw;
+      font-family: 'M PLUS Rounded 1c', sans-serif;
+    }
+    
+    #root {
+      height: 100%;
+      width: 100%;
+    }
+
+    /* コルクボード風背景 */
+    .bg-cork {
+      background-color: #d0a57b;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.15'/%3E%3C/svg%3E");
+    }
+
+    /* 紙の質感背景 */
+    .bg-paper {
+      background-color: #F4F1DE;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
+    }
+
+    /* マスキングテープ装飾 */
+    .masking-tape {
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%) rotate(-2deg);
+      width: 100px;
+      height: 30px;
+      background-color: rgba(129, 178, 154, 0.6); /* Sage */
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+      z-index: 10;
+      border-left: 2px dotted rgba(255,255,255,0.6);
+      border-right: 2px dotted rgba(255,255,255,0.6);
+    }
+    .masking-tape-terracotta { background-color: rgba(224, 122, 95, 0.6); transform: translateX(-50%) rotate(3deg); }
+    .masking-tape-mustard { background-color: rgba(242, 204, 143, 0.6); transform: translateX(-50%) rotate(-1deg); }
+
+    /* 画鋲（ピン）装飾 */
+    .pin {
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, #fca5a5, #E07A5F);
+      box-shadow: 2px 3px 4px rgba(0,0,0,0.3), inset -1px -1px 3px rgba(0,0,0,0.2);
+      z-index: 10;
+    }
+    .pin::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background-color: rgba(255,255,255,0.6);
+    }
+    .pin-blue { background: radial-gradient(circle at 30% 30%, #93c5fd, #3D405B); }
+    .pin-yellow { background: radial-gradient(circle at 30% 30%, #fde047, #F2CC8F); }
+
+    @keyframes openNote {
+      0% { transform: translateY(20px); opacity: 0; }
+      100% { transform: translateY(0); opacity: 1; }
+    }
+    .animate-open-note {
+      animation: openNote 0.5s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+    }
+
+    @keyframes popIn {
+      0% { transform: scale(0.95); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .animate-pop-in { animation: popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useRef } = React;
+
+    // --- 1. アプリのデータ定義（都道府県情報とフォールバック用グリッド座標） ---
+    const PREFECTURES = [
+      { id: 1, name: '北海道', kana: 'ほっかいどう', region: '北海道・東北', x: 14, y: 2, w: 2, h: 2 },
+      { id: 2, name: '青森県', kana: 'あおもりけん', region: '北海道・東北', x: 14, y: 4, w: 1, h: 1 },
+      { id: 3, name: '岩手県', kana: 'いわてけん', region: '北海道・東北', x: 14, y: 5, w: 1, h: 1 },
+      { id: 4, name: '宮城県', kana: 'みやぎけん', region: '北海道・東北', x: 14, y: 6, w: 1, h: 1 },
+      { id: 5, name: '秋田県', kana: 'あきたけん', region: '北海道・東北', x: 13, y: 5, w: 1, h: 1 },
+      { id: 6, name: '山形県', kana: 'やまがたけん', region: '北海道・東北', x: 13, y: 6, w: 1, h: 1 },
+      { id: 7, name: '福島県', kana: 'ふくしまけん', region: '北海道・東北', x: 14, y: 7, w: 1, h: 1 },
+      { id: 8, name: '茨城県', kana: 'いばらきけん', region: '関東', x: 15, y: 8, w: 1, h: 2 },
+      { id: 9, name: '栃木県', kana: 'とちぎけん', region: '関東', x: 14, y: 8, w: 1, h: 1 },
+      { id: 10, name: '群馬県', kana: 'ぐんまけん', region: '関東', x: 13, y: 8, w: 1, h: 1 },
+      { id: 11, name: '埼玉県', kana: 'さいたまけん', region: '関東', x: 13, y: 9, w: 1, h: 1 },
+      { id: 12, name: '千葉県', kana: 'ちばけん', region: '関東', x: 14, y: 9, w: 1, h: 2 },
+      { id: 13, name: '東京都', kana: 'とうきょうと', region: '関東', x: 13, y: 10, w: 1, h: 1 },
+      { id: 14, name: '神奈川県', kana: 'かながわけん', region: '関東', x: 13, y: 11, w: 1, h: 1 },
+      { id: 15, name: '新潟県', kana: 'にいがたけん', region: '中部', x: 13, y: 7, w: 1, h: 1 },
+      { id: 16, name: '富山県', kana: 'とやまけん', region: '中部', x: 11, y: 7, w: 1, h: 1 },
+      { id: 17, name: '石川県', kana: 'いしかわけん', region: '中部', x: 10, y: 6, w: 1, h: 2 },
+      { id: 18, name: '福井県', kana: 'ふくいけん', region: '中部', x: 10, y: 8, w: 1, h: 1 },
+      { id: 19, name: '山梨県', kana: 'やまなしけん', region: '中部', x: 12, y: 10, w: 1, h: 1 },
+      { id: 20, name: '長野県', kana: 'ながのけん', region: '中部', x: 12, y: 8, w: 1, h: 2 },
+      { id: 21, name: '岐阜県', kana: 'ぎふけん', region: '中部', x: 11, y: 8, w: 1, h: 2 },
+      { id: 22, name: '静岡県', kana: 'しずおかけん', region: '中部', x: 12, y: 11, w: 1, h: 1 },
+      { id: 23, name: '愛知県', kana: 'あいちけん', region: '中部', x: 11, y: 10, w: 1, h: 1 },
+      { id: 24, name: '三重県', kana: 'みえけん', region: '近畿', x: 10, y: 10, w: 1, h: 2 },
+      { id: 25, name: '滋賀県', kana: 'しがけん', region: '近畿', x: 10, y: 9, w: 1, h: 1 },
+      { id: 26, name: '京都府', kana: 'きょうとふ', region: '近畿', x: 9, y: 8, w: 1, h: 2 },
+      { id: 27, name: '大阪府', kana: 'おおさかふ', region: '近畿', x: 9, y: 10, w: 1, h: 1 },
+      { id: 28, name: '兵庫県', kana: 'ひょうごけん', region: '近畿', x: 8, y: 9, w: 1, h: 2 },
+      { id: 29, name: '奈良県', kana: 'ならけん', region: '近畿', x: 9, y: 11, w: 1, h: 1 },
+      { id: 30, name: '和歌山県', kana: 'わかやまけん', region: '近畿', x: 8, y: 11, w: 1, h: 1 },
+      { id: 31, name: '鳥取県', kana: 'とっとりけん', region: '中国・四国', x: 7, y: 9, w: 1, h: 1 },
+      { id: 32, name: '島根県', kana: 'しまねけん', region: '中国・四国', x: 6, y: 9, w: 1, h: 1 },
+      { id: 33, name: '岡山県', kana: 'おかやまけん', region: '中国・四国', x: 7, y: 10, w: 1, h: 1 },
+      { id: 34, name: '広島県', kana: 'ひろしまけん', region: '中国・四国', x: 6, y: 10, w: 1, h: 1 },
+      { id: 35, name: '山口県', kana: 'やまぐちけん', region: '中国・四国', x: 5, y: 9, w: 1, h: 2 },
+      { id: 36, name: '徳島県', kana: 'とくしまけん', region: '中国・四国', x: 8, y: 12, w: 1, h: 1 },
+      { id: 37, name: '香川県', kana: 'かがわけん', region: '中国・四国', x: 7, y: 12, w: 1, h: 1 },
+      { id: 38, name: '愛媛県', kana: 'えひめけん', region: '中国・四国', x: 6, y: 12, w: 1, h: 1 },
+      { id: 39, name: '高知県', kana: 'こうちけん', region: '中国・四国', x: 7, y: 13, w: 1, h: 1 },
+      { id: 40, name: '福岡県', kana: 'ふくおかけん', region: '九州・沖縄', x: 4, y: 10, w: 1, h: 1 },
+      { id: 41, name: '佐賀県', kana: 'さがけん', region: '九州・沖縄', x: 3, y: 10, w: 1, h: 1 },
+      { id: 42, name: '長崎県', kana: 'ながさきけん', region: '九州・沖縄', x: 2, y: 10, w: 1, h: 1 },
+      { id: 43, name: '熊本県', kana: 'くまもとけん', region: '九州・沖縄', x: 3, y: 11, w: 1, h: 1 },
+      { id: 44, name: '大分県', kana: 'おおいたけん', region: '九州・沖縄', x: 4, y: 11, w: 1, h: 1 },
+      { id: 45, name: '宮崎県', kana: 'みやざきけん', region: '九州・沖縄', x: 4, y: 12, w: 1, h: 1 },
+      { id: 46, name: '鹿児島県', kana: 'かごしまけん', region: '九州・沖縄', x: 3, y: 12, w: 1, h: 1 },
+      { id: 47, name: '沖縄県', kana: 'おきなわけん', region: '九州・沖縄', x: 1, y: 15, w: 1, h: 1 },
+    ];
+
+    const REGION_LIST = ['北海道・東北', '関東', '中部', '近畿', '中国・四国', '九州・沖縄'];
+
+    // --- 2. サブコンポーネント ---
+
+    // ノート風のボタン（地方選択用）
+    const RegionNote = ({ region, onClick, isSelected, index }) => {
+      const tapeClasses = ['masking-tape', 'masking-tape-terracotta', 'masking-tape-mustard'];
+      const tapeClass = tapeClasses[index % 3];
+
+      return (
+        <div 
+          onClick={onClick}
+          className={`bg-white w-full h-24 sm:h-28 rounded-sm flex flex-col items-center justify-center relative cursor-pointer transition-all p-3
+            ${isSelected 
+              ? 'border-4 border-terracotta transform -translate-y-1 shadow-lg ring-2 ring-terracotta/30' 
+              : 'border border-gray-100 shadow-md hover:-translate-y-1 hover:shadow-lg'}`}
+        >
+          <div className={tapeClass}></div>
+          {isSelected && (
+            <div className="absolute -top-3 -right-3 w-7 h-7 sm:w-8 sm:h-8 bg-terracotta text-white rounded-full flex items-center justify-center font-bold text-lg sm:text-xl shadow-md border-2 border-white z-20">
+              ✓
+            </div>
+          )}
+          <span className="font-rounded text-bluegrey font-bold text-center text-lg sm:text-xl mt-2">
+            {region}
+          </span>
+        </div>
+      );
+    };
+
+    // 【新規】リアルな日本地図（SVG描画）コンポーネント
+    const RealMapGrid = ({ currentPrefId }) => {
+      const [geoData, setGeoData] = useState(null);
+      const [hasError, setHasError] = useState(false);
+      const svgRef = useRef(null);
+
+      useEffect(() => {
+        // GIGA端末対策: localStorageからキャッシュされた地図データを取得
+        const cachedMap = localStorage.getItem('gogo_drill_japan_geojson');
+        if (cachedMap) {
+          try {
+            setGeoData(JSON.parse(cachedMap));
+            return;
+          } catch (e) {
+            console.error("Cache read error");
+          }
+        }
+
+        // キャッシュがない場合はパブリックなGeoJSONを取得
+        const fetchMap = async () => {
+          try {
+            // 国土地理院等のデータに基づく軽量な日本地図GeoJSON
+            const res = await fetch('https://raw.githubusercontent.com/dataofjapan/land/master/japan.geojson');
+            if (!res.ok) throw new Error('Network error');
+            const data = await res.json();
+            
+            // 次回アクセスのためにキャッシュを保存（容量制限回避のtry-catch）
+            try {
+              localStorage.setItem('gogo_drill_japan_geojson', JSON.stringify(data));
+            } catch(e) {}
+            
+            setGeoData(data);
+          } catch (error) {
+            console.error("Map fetch error:", error);
+            setHasError(true); // エラー時はフォールバックに切り替え
+          }
+        };
+
+        fetchMap();
+      }, []);
+
+      // データ取得エラー時、またはオフライン環境用のフォールバック（簡易ブロックマップ）
+      if (hasError) {
+        return (
+          <div className="w-full max-w-[320px] sm:max-w-sm aspect-square bg-[#eaf4f4] rounded-xl p-2 grid border-4 border-white shadow-inner relative mx-auto" 
+               style={{ gridTemplateColumns: 'repeat(16, minmax(0, 1fr))', gridTemplateRows: 'repeat(16, minmax(0, 1fr))', gap: '2px' }}>
+            {PREFECTURES.map(pref => {
+              const isTarget = pref.id === currentPrefId;
+              return (
+                <div 
+                  key={pref.id}
+                  className={`rounded-sm transition-all duration-300 ${
+                    isTarget ? 'bg-terracotta animate-pulse scale-[1.15] z-10 shadow-md border border-white' : 'bg-sage opacity-80 border border-sage/50'
+                  }`}
+                  style={{ gridColumnStart: pref.x, gridRowStart: pref.y, gridColumnEnd: pref.x + pref.w, gridRowEnd: pref.y + pref.h }}
+                ></div>
+              );
+            })}
+          </div>
+        );
+      }
+
+      // ロード中
+      if (!geoData) {
+        return (
+          <div className="w-full max-w-[320px] sm:max-w-sm aspect-square bg-[#eaf4f4] rounded-xl border-4 border-white shadow-inner mx-auto flex flex-col items-center justify-center">
+            <div className="w-10 h-10 border-4 border-sage border-t-transparent rounded-full animate-spin mb-3"></div>
+            <p className="font-rounded font-bold text-sage">ちずを じゅんび中...</p>
+          </div>
+        );
+      }
+
+      // SVGマップの描画設定
+      const width = 400;
+      const height = 400;
+
+      // 日本列島全体が枠内にきれいに収まるようにプロジェクションを自動調整
+      const projection = d3.geoMercator().fitSize([width - 20, height - 20], geoData);
+      const pathGenerator = d3.geoPath().projection(projection);
+
+      return (
+        <div className="w-full max-w-[320px] sm:max-w-sm aspect-square bg-[#eaf4f4] rounded-xl border-4 border-white shadow-inner relative mx-auto overflow-hidden flex items-center justify-center">
+          <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full" ref={svgRef}>
+            {/* 海の装飾 */}
+            <text x="320" y="360" fill="rgba(147, 197, 253, 0.5)" fontSize="40" fontWeight="bold">~</text>
+            <text x="40" y="80" fill="rgba(147, 197, 253, 0.5)" fontSize="30" fontWeight="bold">~</text>
+
+            {/* 都道府県パスの描画 */}
+            <g transform="translate(10, 10)">
+              {geoData.features.map((feature, i) => {
+                const props = feature.properties;
+                // GeoJSON内のプロパティ名（nam_ja等）から都道府県を特定する
+                const nameStr = props.nam_ja || props.name_ja || props.name_local || props.name || props.nam || "";
+                
+                // JISコード(id)がある場合は優先的に使用、なければ名前でマッチング
+                let prefId = null;
+                if (props.id) prefId = parseInt(props.id, 10);
+                
+                const pref = PREFECTURES.find(p => 
+                  (prefId !== null && p.id === prefId) || 
+                  (nameStr && p.name.includes(nameStr.replace(/(都|道|府|県)$/, '')))
+                );
+
+                const isTarget = pref && pref.id === currentPrefId;
+                
+                return (
+                  <path
+                    key={`pref-${i}`}
+                    d={pathGenerator(feature)}
+                    fill={isTarget ? '#E07A5F' : '#81B29A'}
+                    stroke="#ffffff"
+                    strokeWidth="1.5"
+                    strokeLinejoin="round"
+                    className={`transition-colors duration-300 ${isTarget ? "animate-pulse origin-center" : "opacity-90"}`}
+                  />
+                );
+              })}
+            </g>
+          </svg>
+        </div>
+      );
+    };
+
+
+    // --- 3. メインアプリケーション ---
+    const App = () => {
+      // 全てのHookをコンポーネント冒頭で宣言
+      const [gameState, setGameState] = useState('TITLE'); // TITLE, SELECT, QUIZ, RESULT
+      const [selectedRegions, setSelectedRegions] = useState([]);
+      const [questions, setQuestions] = useState([]);
+      const [currentIndex, setCurrentIndex] = useState(0);
+      const [score, setScore] = useState(0);
+      const [feedback, setFeedback] = useState(null); // '⭕️' or '❌'
+      const [options, setOptions] = useState([]);
+      const [hasMistaked, setHasMistaked] = useState(false);
+
+      // ポータルのスコアに加算する関数（localStorage）
+      const addScoreToLocal = () => {
+        const currentScore = parseInt(localStorage.getItem('gogo_drill_score') || '0', 10);
+        localStorage.setItem('gogo_drill_score', currentScore + 1);
+      };
+
+      // 地方の選択/解除
+      const toggleRegion = (region) => {
+        setSelectedRegions(prev => 
+          prev.includes(region) 
+            ? prev.filter(r => r !== region) 
+            : [...prev, region]
+        );
+      };
+
+      // ゲーム開始
+      const startGame = () => {
+        if (selectedRegions.length === 0) {
+          alert('ちほうを 1つ以上 えらんでね！');
+          return;
+        }
+
+        // 選んだ地方の都道府県を抽出してシャッフル
+        let targetPrefs = PREFECTURES.filter(p => selectedRegions.includes(p.region));
+        targetPrefs = targetPrefs.sort(() => 0.5 - Math.random());
+
+        setQuestions(targetPrefs);
+        setCurrentIndex(0);
+        setScore(0);
+        setHasMistaked(false);
+        setFeedback(null);
+        setGameState('QUIZ');
+      };
+
+      // 問題が切り替わった時に選択肢を生成する
+      useEffect(() => {
+        if (gameState === 'QUIZ' && questions.length > 0) {
+          const currentPref = questions[currentIndex];
+          
+          // 同じ地方のダミー抽出
+          const sameRegion = PREFECTURES.filter(p => p.region === currentPref.region && p.id !== currentPref.id);
+          const others = PREFECTURES.filter(p => p.region !== currentPref.region);
+          
+          let newOptions = sameRegion.sort(() => 0.5 - Math.random()).slice(0, 3);
+          
+          // 同じ地方の県が足りない場合（北海道など）は他から補充
+          if (newOptions.length < 3) {
+            const extra = others.sort(() => 0.5 - Math.random()).slice(0, 3 - newOptions.length);
+            newOptions = [...newOptions, ...extra];
+          }
+          
+          newOptions.push(currentPref);
+          setOptions(newOptions.sort(() => 0.5 - Math.random()));
+        }
+      }, [gameState, currentIndex, questions]);
+
+      // 回答ハンドリング
+      const handleAnswer = (opt) => {
+        if (feedback !== null) return; // 判定中は入力を受け付けない
+
+        const isCorrect = opt.id === questions[currentIndex].id;
+
+        if (isCorrect) {
+          setFeedback('⭕️');
+          if (!hasMistaked) {
+            setScore(s => s + 1);
+            addScoreToLocal(); // 1発正解時のみポータルスコア加算
+          }
+          
+          setTimeout(() => {
+            if (currentIndex + 1 < questions.length) {
+              setCurrentIndex(i => i + 1);
+              setHasMistaked(false);
+              setFeedback(null);
+            } else {
+              setGameState('RESULT');
+              setFeedback(null);
+            }
+          }, 1200);
+
+        } else {
+          setFeedback('❌');
+          setHasMistaked(true);
+          
+          setTimeout(() => {
+            setFeedback(null);
+          }, 1200);
+        }
+      };
+
+      // ポータルに戻る
+      const backToPortal = () => {
+        window.location.href = 'https://hot-spring-egg.github.io/5sho-drill/';
+      };
+
+      // --- 4. 画面レンダリング ---
+      return (
+        <div className="w-full h-full flex flex-col items-center justify-center relative overflow-hidden bg-cork">
+          
+          {/* ポータルへ戻るボタン */}
+          {(gameState === 'TITLE' || gameState === 'SELECT') && (
+            <button 
+              onClick={backToPortal}
+              className="absolute top-4 left-4 sm:top-6 sm:left-6 bg-white/90 text-bluegrey px-4 py-2 rounded-full font-bold shadow-sm hover:shadow-md transition-all z-40 border border-gray-200 text-sm sm:text-base"
+            >
+              ← ドリルにもどる
+            </button>
+          )}
+
+          {/* タイトル画面 */}
+          {gameState === 'TITLE' && (
+            <div className="w-full max-w-md mx-auto flex flex-col items-center justify-center p-4">
+              <div className="bg-paper px-8 py-6 rounded-sm shadow-md mb-12 transform -rotate-2 relative border border-white">
+                <div className="masking-tape masking-tape-terracotta"></div>
+                <div className="pin pin-yellow"></div>
+                <h1 className="font-rounded text-4xl sm:text-5xl font-bold text-bluegrey tracking-widest text-center mt-2">
+                  チズノート
+                </h1>
+                <p className="text-center text-sage font-bold mt-2 text-sm sm:text-base">
+                  都道府県クイズ
+                </p>
+              </div>
+              
+              <button 
+                onClick={() => setGameState('SELECT')}
+                className="w-full bg-terracotta text-white font-rounded py-4 rounded-full shadow-lg active:translate-y-1 active:shadow-md text-2xl font-bold transition-all border-4 border-white"
+              >
+                はじめる
+              </button>
+            </div>
+          )}
+
+          {/* 地方選択画面 */}
+          {gameState === 'SELECT' && (
+            <div className="w-full h-full flex flex-col items-center relative py-6">
+              <div className="w-full max-w-4xl mx-auto flex flex-col items-center mb-4 bg-paper/90 p-4 rounded-lg shadow-sm border border-white">
+                <h2 className="font-rounded text-xl sm:text-2xl font-bold text-bluegrey">
+                  どの ちほう に チャレンジする？
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">（いくつでも えらべるよ）</p>
+              </div>
+
+              <div className="w-full max-w-3xl flex justify-end gap-4 px-4 mb-2">
+                <button onClick={() => setSelectedRegions([...REGION_LIST])} className="font-rounded text-sm font-bold text-sage underline">全部えらぶ</button>
+                <button onClick={() => setSelectedRegions([])} className="font-rounded text-sm font-bold text-terracotta underline">全部けす</button>
+              </div>
+
+              <div className="w-full flex-1 overflow-y-auto px-4 pb-32">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 w-full max-w-3xl mx-auto">
+                  {REGION_LIST.map((region, index) => (
+                    <RegionNote 
+                      key={region}
+                      region={region}
+                      index={index}
+                      isSelected={selectedRegions.includes(region)}
+                      onClick={() => toggleRegion(region)}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {selectedRegions.length > 0 && (
+                <div className="absolute bottom-6 w-full flex justify-center animate-open-note z-10 px-4 pointer-events-none">
+                  <button 
+                    onClick={startGame}
+                    className="bg-sage text-white font-rounded py-3 sm:py-4 px-10 rounded-full shadow-lg active:translate-y-1 active:shadow-md text-xl font-bold transition-all border-4 border-white w-full max-w-sm pointer-events-auto"
+                  >
+                    クイズを スタート！
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* クイズ画面 */}
+          {gameState === 'QUIZ' && questions.length > 0 && (
+            <div className="w-full h-full flex flex-col p-2 sm:p-6 relative">
+              <div className="w-full max-w-3xl mx-auto flex-1 flex flex-col items-center bg-paper rounded-sm shadow-xl p-3 sm:p-6 overflow-hidden relative animate-open-note border border-white">
+                
+                {/* ヘッダー情報 */}
+                <div className="w-full flex justify-between items-center font-rounded text-base sm:text-lg text-bluegrey/70 mb-4">
+                  <button 
+                    onClick={() => setGameState('SELECT')} 
+                    className="underline hover:text-bluegrey"
+                    disabled={feedback !== null}
+                  >
+                    ← やめる
+                  </button>
+                  <div className="flex gap-4 font-bold">
+                    <span className="bg-white px-3 py-1 rounded-full shadow-sm">
+                      {currentIndex + 1} / {questions.length} 問
+                    </span>
+                    <span className="bg-white px-3 py-1 rounded-full shadow-sm text-terracotta">
+                      スコア: {score}
+                    </span>
+                  </div>
+                </div>
+
+                {/* リアルなSVGマップ表示 */}
+                <RealMapGrid currentPrefId={questions[currentIndex].id} />
+
+                {/* 問題文 */}
+                <div className="text-center my-4">
+                  <p className="text-xl sm:text-2xl font-bold text-bluegrey bg-white/60 px-6 py-2 rounded-full shadow-sm">
+                    あかく ひかっている ところは どこかな？
+                  </p>
+                </div>
+
+                {/* 選択肢ボタン (2x2 Grid) */}
+                <div className="grid grid-cols-2 gap-3 sm:gap-4 w-full max-w-lg mt-auto pb-2">
+                  {options.map(opt => (
+                    <button 
+                      key={opt.id}
+                      onClick={() => handleAnswer(opt)}
+                      disabled={feedback !== null}
+                      className="bg-white border-b-4 border-sage text-bluegrey font-rounded py-3 sm:py-5 rounded-xl shadow-md hover:bg-sage/10 active:translate-y-1 active:border-b-0 transition-all font-bold flex flex-col items-center justify-center"
+                    >
+                      <span className="text-xs sm:text-sm text-gray-500 font-normal mb-1">{opt.kana}</span>
+                      <span className="text-xl sm:text-3xl leading-none">{opt.name}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* 正誤フィードバック表示 */}
+                {feedback && (
+                  <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none bg-white/30 backdrop-blur-sm">
+                    <span className={`text-[12rem] drop-shadow-xl font-bold ${feedback === '⭕️' ? 'text-sage' : 'text-terracotta'} animate-pop-in`}>
+                      {feedback}
+                    </span>
+                  </div>
+                )}
+
+              </div>
+            </div>
+          )}
+
+          {/* 結果画面 */}
+          {gameState === 'RESULT' && (
+            <div className="w-full h-full flex flex-col p-4 sm:p-8 relative">
+              <div className="w-full max-w-xl mx-auto flex-1 flex flex-col items-center justify-center bg-paper rounded-sm shadow-xl p-6 relative animate-open-note border border-white">
+                <div className="masking-tape"></div>
+                <h2 className="font-rounded text-3xl sm:text-4xl font-bold mb-6 text-bluegrey border-b-2 border-sage pb-2">
+                  けっか はっぴょう
+                </h2>
+                
+                <p className="text-[6rem] sm:text-[8rem] font-bold text-terracotta mb-4 leading-none drop-shadow-sm">
+                  {score} <span className="text-2xl sm:text-4xl text-bluegrey">てん</span>
+                </p>
+                
+                <p className="font-rounded text-lg sm:text-xl mb-12 text-sage font-bold bg-white px-6 py-2 rounded-full shadow-sm">
+                  {score === questions.length ? 'パーフェクト！ すごいぞ！' : 'よく がんばったね！'}
+                </p>
+                
+                <div className="flex flex-col sm:flex-row gap-4 w-full">
+                  <button 
+                    onClick={() => setGameState('SELECT')}
+                    className="flex-1 bg-sage text-white font-rounded py-4 rounded-full shadow-md active:translate-y-1 active:shadow-sm text-xl font-bold transition-all"
+                  >
+                    ちほうを えらぶ
+                  </button>
+                  <button 
+                    onClick={backToPortal}
+                    className="flex-1 bg-bluegrey text-white font-rounded py-4 rounded-full shadow-md active:translate-y-1 active:shadow-sm text-xl font-bold transition-all"
+                  >
+                    ドリルに もどる
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
