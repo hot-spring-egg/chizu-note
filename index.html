@@ -134,7 +134,7 @@
   <script type="text/babel">
     const { useState, useEffect, useMemo, useRef } = React;
 
-    // --- 1. アプリのデータ定義（都道府県情報とフォールバック用グリッド座標） ---
+    // --- 1. アプリのデータ定義 ---
     const PREFECTURES = [
       { id: 1, name: '北海道', kana: 'ほっかいどう', region: '北海道・東北', x: 14, y: 2, w: 2, h: 2 },
       { id: 2, name: '青森県', kana: 'あおもりけん', region: '北海道・東北', x: 14, y: 4, w: 1, h: 1 },
@@ -189,7 +189,6 @@
 
     // --- 2. サブコンポーネント ---
 
-    // ノート風のボタン（地方選択用）
     const RegionNote = ({ region, onClick, isSelected, index }) => {
       const tapeClasses = ['masking-tape', 'masking-tape-terracotta', 'masking-tape-mustard'];
       const tapeClass = tapeClasses[index % 3];
@@ -215,14 +214,13 @@
       );
     };
 
-    // 【新規】リアルな日本地図（SVG描画）コンポーネント
+    // 大きく表示されるリアルな日本地図（SVG描画）コンポーネント
     const RealMapGrid = ({ currentPrefId }) => {
       const [geoData, setGeoData] = useState(null);
       const [hasError, setHasError] = useState(false);
       const svgRef = useRef(null);
 
       useEffect(() => {
-        // GIGA端末対策: localStorageからキャッシュされた地図データを取得
         const cachedMap = localStorage.getItem('gogo_drill_japan_geojson');
         if (cachedMap) {
           try {
@@ -233,15 +231,12 @@
           }
         }
 
-        // キャッシュがない場合はパブリックなGeoJSONを取得
         const fetchMap = async () => {
           try {
-            // 国土地理院等のデータに基づく軽量な日本地図GeoJSON
             const res = await fetch('https://raw.githubusercontent.com/dataofjapan/land/master/japan.geojson');
             if (!res.ok) throw new Error('Network error');
             const data = await res.json();
             
-            // 次回アクセスのためにキャッシュを保存（容量制限回避のtry-catch）
             try {
               localStorage.setItem('gogo_drill_japan_geojson', JSON.stringify(data));
             } catch(e) {}
@@ -249,18 +244,18 @@
             setGeoData(data);
           } catch (error) {
             console.error("Map fetch error:", error);
-            setHasError(true); // エラー時はフォールバックに切り替え
+            setHasError(true);
           }
         };
 
         fetchMap();
       }, []);
 
-      // データ取得エラー時、またはオフライン環境用のフォールバック（簡易ブロックマップ）
+      // オフライン時フォールバック
       if (hasError) {
         return (
-          <div className="w-full max-w-[320px] sm:max-w-sm aspect-square bg-[#eaf4f4] rounded-xl p-2 grid border-4 border-white shadow-inner relative mx-auto" 
-               style={{ gridTemplateColumns: 'repeat(16, minmax(0, 1fr))', gridTemplateRows: 'repeat(16, minmax(0, 1fr))', gap: '2px' }}>
+          <div className="w-full aspect-square bg-[#eaf4f4] rounded-xl p-2 grid border-4 border-white shadow-inner relative mx-auto shrink-0" 
+               style={{ maxWidth: 'min(100%, 55vh)', gridTemplateColumns: 'repeat(16, minmax(0, 1fr))', gridTemplateRows: 'repeat(16, minmax(0, 1fr))', gap: '2px' }}>
             {PREFECTURES.map(pref => {
               const isTarget = pref.id === currentPrefId;
               return (
@@ -277,39 +272,38 @@
         );
       }
 
-      // ロード中
       if (!geoData) {
         return (
-          <div className="w-full max-w-[320px] sm:max-w-sm aspect-square bg-[#eaf4f4] rounded-xl border-4 border-white shadow-inner mx-auto flex flex-col items-center justify-center">
-            <div className="w-10 h-10 border-4 border-sage border-t-transparent rounded-full animate-spin mb-3"></div>
-            <p className="font-rounded font-bold text-sage">ちずを じゅんび中...</p>
+          <div className="w-full aspect-square bg-[#eaf4f4] rounded-xl border-4 border-white shadow-inner mx-auto flex flex-col items-center justify-center shrink-0" style={{ maxWidth: 'min(100%, 55vh)' }}>
+            <div className="w-12 h-12 border-4 border-sage border-t-transparent rounded-full animate-spin mb-4"></div>
+            <p className="font-rounded font-bold text-sage text-lg">ちずを じゅんび中...</p>
           </div>
         );
       }
 
-      // SVGマップの描画設定
-      const width = 400;
-      const height = 400;
+      // SVGマップの描画設定（解像度と枠を拡大）
+      const width = 800;
+      const height = 800;
 
-      // 日本列島全体が枠内にきれいに収まるようにプロジェクションを自動調整
-      const projection = d3.geoMercator().fitSize([width - 20, height - 20], geoData);
+      // fitSizeでマージンを減らし、コンテナの限界まで地図を大きくする
+      const projection = d3.geoMercator().fitSize([width - 10, height - 10], geoData);
       const pathGenerator = d3.geoPath().projection(projection);
 
       return (
-        <div className="w-full max-w-[320px] sm:max-w-sm aspect-square bg-[#eaf4f4] rounded-xl border-4 border-white shadow-inner relative mx-auto overflow-hidden flex items-center justify-center">
+        <div 
+          className="w-full aspect-square bg-[#eaf4f4] rounded-xl border-4 border-white shadow-inner relative mx-auto overflow-hidden flex items-center justify-center shrink-0"
+          style={{ maxWidth: 'min(100%, 55vh)' }}
+        >
           <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full" ref={svgRef}>
-            {/* 海の装飾 */}
-            <text x="320" y="360" fill="rgba(147, 197, 253, 0.5)" fontSize="40" fontWeight="bold">~</text>
-            <text x="40" y="80" fill="rgba(147, 197, 253, 0.5)" fontSize="30" fontWeight="bold">~</text>
+            {/* 海の装飾（サイズ調整） */}
+            <text x="650" y="720" fill="rgba(147, 197, 253, 0.5)" fontSize="60" fontWeight="bold">~</text>
+            <text x="60" y="150" fill="rgba(147, 197, 253, 0.5)" fontSize="50" fontWeight="bold">~</text>
 
-            {/* 都道府県パスの描画 */}
-            <g transform="translate(10, 10)">
+            <g transform="translate(5, 5)">
               {geoData.features.map((feature, i) => {
                 const props = feature.properties;
-                // GeoJSON内のプロパティ名（nam_ja等）から都道府県を特定する
                 const nameStr = props.nam_ja || props.name_ja || props.name_local || props.name || props.nam || "";
                 
-                // JISコード(id)がある場合は優先的に使用、なければ名前でマッチング
                 let prefId = null;
                 if (props.id) prefId = parseInt(props.id, 10);
                 
@@ -326,7 +320,7 @@
                     d={pathGenerator(feature)}
                     fill={isTarget ? '#E07A5F' : '#81B29A'}
                     stroke="#ffffff"
-                    strokeWidth="1.5"
+                    strokeWidth="3" 
                     strokeLinejoin="round"
                     className={`transition-colors duration-300 ${isTarget ? "animate-pulse origin-center" : "opacity-90"}`}
                   />
@@ -341,23 +335,20 @@
 
     // --- 3. メインアプリケーション ---
     const App = () => {
-      // 全てのHookをコンポーネント冒頭で宣言
-      const [gameState, setGameState] = useState('TITLE'); // TITLE, SELECT, QUIZ, RESULT
+      const [gameState, setGameState] = useState('TITLE'); 
       const [selectedRegions, setSelectedRegions] = useState([]);
       const [questions, setQuestions] = useState([]);
       const [currentIndex, setCurrentIndex] = useState(0);
       const [score, setScore] = useState(0);
-      const [feedback, setFeedback] = useState(null); // '⭕️' or '❌'
+      const [feedback, setFeedback] = useState(null); 
       const [options, setOptions] = useState([]);
       const [hasMistaked, setHasMistaked] = useState(false);
 
-      // ポータルのスコアに加算する関数（localStorage）
       const addScoreToLocal = () => {
         const currentScore = parseInt(localStorage.getItem('gogo_drill_score') || '0', 10);
         localStorage.setItem('gogo_drill_score', currentScore + 1);
       };
 
-      // 地方の選択/解除
       const toggleRegion = (region) => {
         setSelectedRegions(prev => 
           prev.includes(region) 
@@ -366,14 +357,12 @@
         );
       };
 
-      // ゲーム開始
       const startGame = () => {
         if (selectedRegions.length === 0) {
           alert('ちほうを 1つ以上 えらんでね！');
           return;
         }
 
-        // 選んだ地方の都道府県を抽出してシャッフル
         let targetPrefs = PREFECTURES.filter(p => selectedRegions.includes(p.region));
         targetPrefs = targetPrefs.sort(() => 0.5 - Math.random());
 
@@ -385,18 +374,15 @@
         setGameState('QUIZ');
       };
 
-      // 問題が切り替わった時に選択肢を生成する
       useEffect(() => {
         if (gameState === 'QUIZ' && questions.length > 0) {
           const currentPref = questions[currentIndex];
           
-          // 同じ地方のダミー抽出
           const sameRegion = PREFECTURES.filter(p => p.region === currentPref.region && p.id !== currentPref.id);
           const others = PREFECTURES.filter(p => p.region !== currentPref.region);
           
           let newOptions = sameRegion.sort(() => 0.5 - Math.random()).slice(0, 3);
           
-          // 同じ地方の県が足りない場合（北海道など）は他から補充
           if (newOptions.length < 3) {
             const extra = others.sort(() => 0.5 - Math.random()).slice(0, 3 - newOptions.length);
             newOptions = [...newOptions, ...extra];
@@ -407,9 +393,8 @@
         }
       }, [gameState, currentIndex, questions]);
 
-      // 回答ハンドリング
       const handleAnswer = (opt) => {
-        if (feedback !== null) return; // 判定中は入力を受け付けない
+        if (feedback !== null) return; 
 
         const isCorrect = opt.id === questions[currentIndex].id;
 
@@ -417,7 +402,7 @@
           setFeedback('⭕️');
           if (!hasMistaked) {
             setScore(s => s + 1);
-            addScoreToLocal(); // 1発正解時のみポータルスコア加算
+            addScoreToLocal(); 
           }
           
           setTimeout(() => {
@@ -441,16 +426,13 @@
         }
       };
 
-      // ポータルに戻る
       const backToPortal = () => {
         window.location.href = 'https://hot-spring-egg.github.io/5sho-drill/';
       };
 
-      // --- 4. 画面レンダリング ---
       return (
         <div className="w-full h-full flex flex-col items-center justify-center relative overflow-hidden bg-cork">
           
-          {/* ポータルへ戻るボタン */}
           {(gameState === 'TITLE' || gameState === 'SELECT') && (
             <button 
               onClick={backToPortal}
@@ -460,7 +442,6 @@
             </button>
           )}
 
-          {/* タイトル画面 */}
           {gameState === 'TITLE' && (
             <div className="w-full max-w-md mx-auto flex flex-col items-center justify-center p-4">
               <div className="bg-paper px-8 py-6 rounded-sm shadow-md mb-12 transform -rotate-2 relative border border-white">
@@ -483,7 +464,6 @@
             </div>
           )}
 
-          {/* 地方選択画面 */}
           {gameState === 'SELECT' && (
             <div className="w-full h-full flex flex-col items-center relative py-6">
               <div className="w-full max-w-4xl mx-auto flex flex-col items-center mb-4 bg-paper/90 p-4 rounded-lg shadow-sm border border-white">
@@ -527,11 +507,11 @@
 
           {/* クイズ画面 */}
           {gameState === 'QUIZ' && questions.length > 0 && (
-            <div className="w-full h-full flex flex-col p-2 sm:p-6 relative">
-              <div className="w-full max-w-3xl mx-auto flex-1 flex flex-col items-center bg-paper rounded-sm shadow-xl p-3 sm:p-6 overflow-hidden relative animate-open-note border border-white">
+            <div className="w-full h-full flex flex-col p-2 sm:p-4 relative">
+              <div className="w-full max-w-3xl mx-auto flex-1 flex flex-col items-center bg-paper rounded-sm shadow-xl p-2 sm:p-4 overflow-hidden relative animate-open-note border border-white">
                 
                 {/* ヘッダー情報 */}
-                <div className="w-full flex justify-between items-center font-rounded text-base sm:text-lg text-bluegrey/70 mb-4">
+                <div className="w-full flex justify-between items-center font-rounded text-sm sm:text-base text-bluegrey/70 mb-2 px-2">
                   <button 
                     onClick={() => setGameState('SELECT')} 
                     className="underline hover:text-bluegrey"
@@ -539,7 +519,7 @@
                   >
                     ← やめる
                   </button>
-                  <div className="flex gap-4 font-bold">
+                  <div className="flex gap-3 font-bold">
                     <span className="bg-white px-3 py-1 rounded-full shadow-sm">
                       {currentIndex + 1} / {questions.length} 問
                     </span>
@@ -549,32 +529,31 @@
                   </div>
                 </div>
 
-                {/* リアルなSVGマップ表示 */}
+                {/* 最大化されたSVGマップ表示 */}
                 <RealMapGrid currentPrefId={questions[currentIndex].id} />
 
                 {/* 問題文 */}
-                <div className="text-center my-4">
-                  <p className="text-xl sm:text-2xl font-bold text-bluegrey bg-white/60 px-6 py-2 rounded-full shadow-sm">
+                <div className="text-center my-3 shrink-0">
+                  <p className="text-lg sm:text-xl font-bold text-bluegrey bg-white/60 px-4 py-1.5 rounded-full shadow-sm">
                     あかく ひかっている ところは どこかな？
                   </p>
                 </div>
 
-                {/* 選択肢ボタン (2x2 Grid) */}
-                <div className="grid grid-cols-2 gap-3 sm:gap-4 w-full max-w-lg mt-auto pb-2">
+                {/* 選択肢ボタン */}
+                <div className="grid grid-cols-2 gap-2 sm:gap-4 w-full max-w-lg mt-auto pb-1 px-1">
                   {options.map(opt => (
                     <button 
                       key={opt.id}
                       onClick={() => handleAnswer(opt)}
                       disabled={feedback !== null}
-                      className="bg-white border-b-4 border-sage text-bluegrey font-rounded py-3 sm:py-5 rounded-xl shadow-md hover:bg-sage/10 active:translate-y-1 active:border-b-0 transition-all font-bold flex flex-col items-center justify-center"
+                      className="bg-white border-b-4 border-sage text-bluegrey font-rounded py-2.5 sm:py-4 rounded-xl shadow-md hover:bg-sage/10 active:translate-y-1 active:border-b-0 transition-all font-bold flex flex-col items-center justify-center"
                     >
-                      <span className="text-xs sm:text-sm text-gray-500 font-normal mb-1">{opt.kana}</span>
-                      <span className="text-xl sm:text-3xl leading-none">{opt.name}</span>
+                      <span className="text-xs text-gray-500 font-normal mb-0.5">{opt.kana}</span>
+                      <span className="text-xl sm:text-2xl leading-none">{opt.name}</span>
                     </button>
                   ))}
                 </div>
 
-                {/* 正誤フィードバック表示 */}
                 {feedback && (
                   <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none bg-white/30 backdrop-blur-sm">
                     <span className={`text-[12rem] drop-shadow-xl font-bold ${feedback === '⭕️' ? 'text-sage' : 'text-terracotta'} animate-pop-in`}>
@@ -587,7 +566,6 @@
             </div>
           )}
 
-          {/* 結果画面 */}
           {gameState === 'RESULT' && (
             <div className="w-full h-full flex flex-col p-4 sm:p-8 relative">
               <div className="w-full max-w-xl mx-auto flex-1 flex flex-col items-center justify-center bg-paper rounded-sm shadow-xl p-6 relative animate-open-note border border-white">
