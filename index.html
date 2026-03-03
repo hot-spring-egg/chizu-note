@@ -69,23 +69,6 @@
       background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
     }
 
-    /* マスキングテープ装飾 */
-    .masking-tape {
-      position: absolute;
-      top: -12px;
-      left: 50%;
-      transform: translateX(-50%) rotate(-2deg);
-      width: 100px;
-      height: 30px;
-      background-color: rgba(129, 178, 154, 0.6);
-      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-      z-index: 10;
-      border-left: 2px dotted rgba(255,255,255,0.6);
-      border-right: 2px dotted rgba(255,255,255,0.6);
-    }
-    .masking-tape-terracotta { background-color: rgba(224, 122, 95, 0.6); transform: translateX(-50%) rotate(3deg); }
-    .masking-tape-mustard { background-color: rgba(242, 204, 143, 0.6); transform: translateX(-50%) rotate(-1deg); }
-
     /* 画鋲（ピン）装飾 */
     .pin {
       position: absolute;
@@ -186,10 +169,7 @@
     const REGION_LIST = ['北海道・東北', '関東', '中部', '近畿', '中国・四国', '九州・沖縄'];
 
     // --- ノート風のボタン（地方選択用） ---
-    const RegionNote = ({ region, onClick, isSelected, index }) => {
-      const tapeClasses = ['masking-tape', 'masking-tape-terracotta', 'masking-tape-mustard'];
-      const tapeClass = tapeClasses[index % 3];
-
+    const RegionNote = ({ region, onClick, isSelected }) => {
       return (
         <div 
           onClick={onClick}
@@ -198,7 +178,6 @@
               ? 'border-4 border-terracotta transform -translate-y-1 shadow-lg ring-2 ring-terracotta/30' 
               : 'border border-gray-100 shadow-md hover:-translate-y-1 hover:shadow-lg'}`}
         >
-          <div className={tapeClass}></div>
           {isSelected && (
             <div className="absolute -top-3 -right-3 w-7 h-7 sm:w-8 sm:h-8 bg-terracotta text-white rounded-full flex items-center justify-center font-bold text-lg sm:text-xl shadow-md border-2 border-white z-20">
               ✓
@@ -215,10 +194,8 @@
     const RealMapGrid = ({ currentPrefId }) => {
       const [geoData, setGeoData] = useState(null);
       const [hasError, setHasError] = useState(false);
-      // D3で操作するための参照
       const gRef = useRef(null);
 
-      // 地図データの取得とキャッシュ
       useEffect(() => {
         const cachedMap = localStorage.getItem('gogo_drill_japan_geojson');
         if (cachedMap) {
@@ -250,7 +227,6 @@
         fetchMap();
       }, []);
 
-      // ズーム（フォーカス）アニメーションの制御
       useEffect(() => {
         if (!geoData || !currentPrefId || !gRef.current) return;
 
@@ -278,21 +254,17 @@
         });
 
         if (targetFeature) {
-          // 1. 問題が変わった瞬間：一瞬で「日本全体」表示に戻す
           g.interrupt().attr("transform", "translate(5, 5) scale(1)");
 
-          // 2. 対象の都道府県の境界線から中心点とサイズを計算
           const bounds = pathGenerator.bounds(targetFeature);
           const dx = bounds[1][0] - bounds[0][0];
           const dy = bounds[1][1] - bounds[0][1];
           const x = (bounds[0][0] + bounds[1][0]) / 2;
           const y = (bounds[0][1] + bounds[1][1]) / 2;
 
-          // 画面に収まる最適なズーム倍率を計算（最大3.5倍）
           const scale = Math.max(1, Math.min(3.5, 0.6 / Math.max(dx / width, dy / height)));
           const translate = [width / 2 - scale * x, height / 2 - scale * y];
 
-          // 3. 少し待ってから、なめらかにズームイン
           g.transition()
             .delay(600)    
             .duration(1500) 
@@ -301,7 +273,6 @@
         }
       }, [currentPrefId, geoData]);
 
-      // エラー時のフォールバック（簡易ブロックマップ）
       if (hasError) {
         return (
           <div className="w-full aspect-square bg-[#eaf4f4] rounded-xl p-2 grid border-4 border-white shadow-inner relative mx-auto shrink-0" 
@@ -322,7 +293,6 @@
         );
       }
 
-      // データロード中
       if (!geoData) {
         return (
           <div className="w-full aspect-square bg-[#eaf4f4] rounded-xl border-4 border-white shadow-inner mx-auto flex flex-col items-center justify-center shrink-0" style={{ maxWidth: 'min(100%, 55vh)' }}>
@@ -332,7 +302,6 @@
         );
       }
 
-      // SVGマップの描画
       const width = 800;
       const height = 800;
       const projection = d3.geoMercator().fitSize([width - 10, height - 10], geoData);
@@ -344,7 +313,6 @@
           style={{ maxWidth: 'min(100%, 55vh)' }}
         >
           <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full">
-            {/* 背景の波 */}
             <text x="650" y="720" fill="rgba(147, 197, 253, 0.5)" fontSize="60" fontWeight="bold">~</text>
             <text x="60" y="150" fill="rgba(147, 197, 253, 0.5)" fontSize="50" fontWeight="bold">~</text>
 
@@ -493,7 +461,6 @@
           {gameState === 'TITLE' && (
             <div className="w-full max-w-md mx-auto flex flex-col items-center justify-center p-4">
               <div className="bg-paper px-8 py-6 rounded-sm shadow-md mb-12 transform -rotate-2 relative border border-white">
-                <div className="masking-tape masking-tape-terracotta"></div>
                 <div className="pin pin-yellow"></div>
                 <h1 className="font-rounded text-4xl sm:text-5xl font-bold text-bluegrey tracking-widest text-center mt-2">
                   チズノート
@@ -532,7 +499,6 @@
                     <RegionNote 
                       key={region}
                       region={region}
-                      index={index}
                       isSelected={selectedRegions.includes(region)}
                       onClick={() => toggleRegion(region)}
                     />
@@ -575,17 +541,14 @@
                   </div>
                 </div>
 
-                {/* カメラワーク付きのSVGマップ（サイズはそのまま） */}
                 <RealMapGrid currentPrefId={questions[currentIndex].id} />
 
-                {/* 問題文（余白を削減） */}
                 <div className="text-center my-2 shrink-0 z-10">
                   <p className="text-base sm:text-lg font-bold text-bluegrey bg-white/80 backdrop-blur-sm px-4 py-1 rounded-full shadow-sm border border-gray-100">
                     あかく ひかっている ところは どこかな？
                   </p>
                 </div>
 
-                {/* 選択肢ボタン（コンパクトに調整） */}
                 <div className="grid grid-cols-2 gap-2 w-full max-w-md mt-auto pb-2 px-2 z-10">
                   {options.map(opt => (
                     <button 
@@ -615,7 +578,6 @@
           {gameState === 'RESULT' && (
             <div className="w-full h-full flex flex-col p-4 sm:p-8 relative">
               <div className="w-full max-w-xl mx-auto flex-1 flex flex-col items-center justify-center bg-paper rounded-sm shadow-xl p-6 relative animate-open-note border border-white">
-                <div className="masking-tape"></div>
                 <h2 className="font-rounded text-3xl sm:text-4xl font-bold mb-6 text-bluegrey border-b-2 border-sage pb-2">
                   けっか はっぴょう
                 </h2>
