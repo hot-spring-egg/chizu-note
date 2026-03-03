@@ -33,7 +33,7 @@
   <!-- Babel -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <!-- D3.js (SVG地図描画用) -->
+  <!-- D3.js (SVG地図描画とアニメーション用) -->
   <script src="https://d3js.org/d3.v7.min.js"></script>
   
   <!-- Google Fonts -->
@@ -77,7 +77,7 @@
       transform: translateX(-50%) rotate(-2deg);
       width: 100px;
       height: 30px;
-      background-color: rgba(129, 178, 154, 0.6); /* Sage */
+      background-color: rgba(129, 178, 154, 0.6);
       box-shadow: 0 1px 2px rgba(0,0,0,0.1);
       z-index: 10;
       border-left: 2px dotted rgba(255,255,255,0.6);
@@ -117,9 +117,7 @@
       0% { transform: translateY(20px); opacity: 0; }
       100% { transform: translateY(0); opacity: 1; }
     }
-    .animate-open-note {
-      animation: openNote 0.5s cubic-bezier(0.25, 1, 0.5, 1) forwards;
-    }
+    .animate-open-note { animation: openNote 0.5s cubic-bezier(0.25, 1, 0.5, 1) forwards; }
 
     @keyframes popIn {
       0% { transform: scale(0.95); opacity: 0; }
@@ -132,9 +130,9 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect, useMemo, useRef } = React;
+    const { useState, useEffect, useRef } = React;
 
-    // --- 1. アプリのデータ定義 ---
+    // --- アプリのデータ定義 ---
     const PREFECTURES = [
       { id: 1, name: '北海道', kana: 'ほっかいどう', region: '北海道・東北', x: 14, y: 2, w: 2, h: 2 },
       { id: 2, name: '青森県', kana: 'あおもりけん', region: '北海道・東北', x: 14, y: 4, w: 1, h: 1 },
@@ -187,8 +185,7 @@
 
     const REGION_LIST = ['北海道・東北', '関東', '中部', '近畿', '中国・四国', '九州・沖縄'];
 
-    // --- 2. サブコンポーネント ---
-
+    // --- ノート風のボタン（地方選択用） ---
     const RegionNote = ({ region, onClick, isSelected, index }) => {
       const tapeClasses = ['masking-tape', 'masking-tape-terracotta', 'masking-tape-mustard'];
       const tapeClass = tapeClasses[index % 3];
@@ -214,12 +211,14 @@
       );
     };
 
-    // 大きく表示されるリアルな日本地図（SVG描画）コンポーネント
+    // --- アニメーション機能付き日本地図コンポーネント ---
     const RealMapGrid = ({ currentPrefId }) => {
       const [geoData, setGeoData] = useState(null);
       const [hasError, setHasError] = useState(false);
-      const svgRef = useRef(null);
+      // D3で操作するための参照
+      const gRef = useRef(null);
 
+      // 地図データの取得とキャッシュ
       useEffect(() => {
         const cachedMap = localStorage.getItem('gogo_drill_japan_geojson');
         if (cachedMap) {
@@ -251,7 +250,59 @@
         fetchMap();
       }, []);
 
-      // オフライン時フォールバック
+      // ズーム（フォーカス）アニメーションの制御
+      useEffect(() => {
+        if (!geoData || !currentPrefId || !gRef.current) return;
+
+        const g = d3.select(gRef.current);
+        const width = 800;
+        const height = 800;
+        const projection = d3.geoMercator().fitSize([width - 10, height - 10], geoData);
+        const pathGenerator = d3.geoPath().projection(projection);
+
+        // GeoJSONの中から、現在のお題となる都道府県のパスデータを特定
+        let targetFeature = null;
+        geoData.features.forEach(feature => {
+          const props = feature.properties;
+          const nameStr = props.nam_ja || props.name_ja || props.name_local || props.name || props.nam || "";
+          
+          let prefId = null;
+          if (props.id) prefId = parseInt(props.id, 10);
+          
+          const pref = PREFECTURES.find(p => 
+            (prefId !== null && p.id === prefId) || 
+            (nameStr && p.name.includes(nameStr.replace(/(都|道|府|県)$/, '')))
+          );
+          if (pref && pref.id === currentPrefId) {
+            targetFeature = feature;
+          }
+        });
+
+        if (targetFeature) {
+          // 1. 問題が変わった瞬間：一瞬で「日本全体」表示に戻す
+          g.interrupt().attr("transform", "translate(5, 5) scale(1)");
+
+          // 2. 対象の都道府県の境界線(Bounding Box)から中心点とサイズを計算
+          const bounds = pathGenerator.bounds(targetFeature);
+          const dx = bounds[1][0] - bounds[0][0];
+          const dy = bounds[1][1] - bounds[0][1];
+          const x = (bounds[0][0] + bounds[1][0]) / 2;
+          const y = (bounds[0][1] + bounds[1][1]) / 2;
+
+          // 画面に収まる最適なズーム倍率を計算（最大でも3.5倍までにして見失わないようにする）
+          const scale = Math.max(1, Math.min(3.5, 0.6 / Math.max(dx / width, dy / height)));
+          const translate = [width / 2 - scale * x, height / 2 - scale * y];
+
+          // 3. 少し待ってから、なめらかにズームイン（フォーカス）する
+          g.transition()
+            .delay(600)    // 0.6秒間は日本全体を見せて「どの辺りか」を把握させる
+            .duration(1500) // 1.5秒かけてゆっくりカメラを寄せる
+            .ease(d3.easeCubicInOut)
+            .attr("transform", `translate(${translate[0]},${translate[1]}) scale(${scale})`);
+        }
+      }, [currentPrefId, geoData]);
+
+      // エラー時のフォールバック（簡易ブロックマップ）
       if (hasError) {
         return (
           <div className="w-full aspect-square bg-[#eaf4f4] rounded-xl p-2 grid border-4 border-white shadow-inner relative mx-auto shrink-0" 
@@ -272,6 +323,7 @@
         );
       }
 
+      // データロード中
       if (!geoData) {
         return (
           <div className="w-full aspect-square bg-[#eaf4f4] rounded-xl border-4 border-white shadow-inner mx-auto flex flex-col items-center justify-center shrink-0" style={{ maxWidth: 'min(100%, 55vh)' }}>
@@ -281,11 +333,9 @@
         );
       }
 
-      // SVGマップの描画設定（解像度と枠を拡大）
+      // SVGマップの描画
       const width = 800;
       const height = 800;
-
-      // fitSizeでマージンを減らし、コンテナの限界まで地図を大きくする
       const projection = d3.geoMercator().fitSize([width - 10, height - 10], geoData);
       const pathGenerator = d3.geoPath().projection(projection);
 
@@ -294,12 +344,13 @@
           className="w-full aspect-square bg-[#eaf4f4] rounded-xl border-4 border-white shadow-inner relative mx-auto overflow-hidden flex items-center justify-center shrink-0"
           style={{ maxWidth: 'min(100%, 55vh)' }}
         >
-          <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full" ref={svgRef}>
-            {/* 海の装飾（サイズ調整） */}
+          <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full">
+            {/* 背景の波（カメラ移動の影響を受けないようにグループ外に配置） */}
             <text x="650" y="720" fill="rgba(147, 197, 253, 0.5)" fontSize="60" fontWeight="bold">~</text>
             <text x="60" y="150" fill="rgba(147, 197, 253, 0.5)" fontSize="50" fontWeight="bold">~</text>
 
-            <g transform="translate(5, 5)">
+            {/* D3でアニメーションさせるグループ */}
+            <g ref={gRef}>
               {geoData.features.map((feature, i) => {
                 const props = feature.properties;
                 const nameStr = props.nam_ja || props.name_ja || props.name_local || props.name || props.nam || "";
@@ -320,9 +371,9 @@
                     d={pathGenerator(feature)}
                     fill={isTarget ? '#E07A5F' : '#81B29A'}
                     stroke="#ffffff"
-                    strokeWidth="3" 
-                    strokeLinejoin="round"
-                    className={`transition-colors duration-300 ${isTarget ? "animate-pulse origin-center" : "opacity-90"}`}
+                    strokeWidth="2" 
+                    vectorEffect="non-scaling-stroke" 
+                    className={`transition-colors duration-300 ${isTarget ? "animate-pulse" : "opacity-80"}`}
                   />
                 );
               })}
@@ -332,8 +383,7 @@
       );
     };
 
-
-    // --- 3. メインアプリケーション ---
+    // --- メインアプリケーション ---
     const App = () => {
       const [gameState, setGameState] = useState('TITLE'); 
       const [selectedRegions, setSelectedRegions] = useState([]);
@@ -505,12 +555,10 @@
             </div>
           )}
 
-          {/* クイズ画面 */}
           {gameState === 'QUIZ' && questions.length > 0 && (
             <div className="w-full h-full flex flex-col p-2 sm:p-4 relative">
               <div className="w-full max-w-3xl mx-auto flex-1 flex flex-col items-center bg-paper rounded-sm shadow-xl p-2 sm:p-4 overflow-hidden relative animate-open-note border border-white">
                 
-                {/* ヘッダー情報 */}
                 <div className="w-full flex justify-between items-center font-rounded text-sm sm:text-base text-bluegrey/70 mb-2 px-2">
                   <button 
                     onClick={() => setGameState('SELECT')} 
@@ -529,17 +577,15 @@
                   </div>
                 </div>
 
-                {/* 最大化されたSVGマップ表示 */}
+                {/* カメラワーク付きのSVGマップ */}
                 <RealMapGrid currentPrefId={questions[currentIndex].id} />
 
-                {/* 問題文 */}
-                <div className="text-center my-3 shrink-0">
-                  <p className="text-lg sm:text-xl font-bold text-bluegrey bg-white/60 px-4 py-1.5 rounded-full shadow-sm">
+                <div className="text-center my-3 shrink-0 z-10">
+                  <p className="text-lg sm:text-xl font-bold text-bluegrey bg-white/80 backdrop-blur-sm px-4 py-1.5 rounded-full shadow-sm border border-gray-100">
                     あかく ひかっている ところは どこかな？
                   </p>
                 </div>
 
-                {/* 選択肢ボタン */}
                 <div className="grid grid-cols-2 gap-2 sm:gap-4 w-full max-w-lg mt-auto pb-1 px-1">
                   {options.map(opt => (
                     <button 
