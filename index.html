@@ -38,6 +38,7 @@
   
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="icon" href="favicon.png">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;700&display=swap" rel="stylesheet">
   
@@ -68,23 +69,6 @@
       background-color: #F4F1DE;
       background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
     }
-
-    /* マスキングテープ装飾 */
-    .masking-tape {
-      position: absolute;
-      top: -12px;
-      left: 50%;
-      transform: translateX(-50%) rotate(-2deg);
-      width: 100px;
-      height: 30px;
-      background-color: rgba(129, 178, 154, 0.6);
-      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-      z-index: 10;
-      border-left: 2px dotted rgba(255,255,255,0.6);
-      border-right: 2px dotted rgba(255,255,255,0.6);
-    }
-    .masking-tape-terracotta { background-color: rgba(224, 122, 95, 0.6); transform: translateX(-50%) rotate(3deg); }
-    .masking-tape-mustard { background-color: rgba(242, 204, 143, 0.6); transform: translateX(-50%) rotate(-1deg); }
 
     /* 画鋲（ピン）装飾 */
     .pin {
@@ -261,15 +245,10 @@
           let prefId = null;
           if (props.id) prefId = parseInt(props.id, 10);
           
-          // 完全一致判定に変更（東京都と京都府の混同を防止）
-          const pref = PREFECTURES.find(p => {
-            if (prefId !== null && p.id === prefId) return true;
-            if (!nameStr) return false;
-            const cleanGeoName = nameStr.replace(/(都|道|府|県)$/, '');
-            const cleanPrefName = p.name.replace(/(都|道|府|県)$/, '');
-            return cleanGeoName === cleanPrefName;
-          });
-
+          const pref = PREFECTURES.find(p => 
+            (prefId !== null && p.id === prefId) || 
+            (nameStr && p.name.includes(nameStr.replace(/(都|道|府|県)$/, '')))
+          );
           if (pref && pref.id === currentPrefId) {
             targetFeature = feature;
           }
@@ -346,14 +325,10 @@
                 let prefId = null;
                 if (props.id) prefId = parseInt(props.id, 10);
                 
-                // 完全一致判定に変更
-                const pref = PREFECTURES.find(p => {
-                  if (prefId !== null && p.id === prefId) return true;
-                  if (!nameStr) return false;
-                  const cleanGeoName = nameStr.replace(/(都|道|府|県)$/, '');
-                  const cleanPrefName = p.name.replace(/(都|道|府|県)$/, '');
-                  return cleanGeoName === cleanPrefName;
-                });
+                const pref = PREFECTURES.find(p => 
+                  (prefId !== null && p.id === prefId) || 
+                  (nameStr && p.name.includes(nameStr.replace(/(都|道|府|県)$/, '')))
+                );
 
                 const isTarget = pref && pref.id === currentPrefId;
                 
@@ -469,7 +444,7 @@
       };
 
       const backToPortal = () => {
-        window.location.href = 'https://hot-spring-egg.github.io/5sho-drill/';
+        window.location.href = 'https://hot-spring-egg.github.io/ontama-drill/';
       };
 
       return (
