@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>チズノート</title>
   
-  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -26,17 +25,20 @@
     }
   </script>
   
-  <!-- React & ReactDOM -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   
-  <!-- Babel -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <!-- D3.js (SVG地図描画とアニメーション用) -->
+  <script>
+    Babel.registerPreset('react-classic', {
+      presets: [
+        [Babel.availablePresets['react'], { "runtime": "classic" }]
+      ]
+    });
+  </script>
   <script src="https://d3js.org/d3.v7.min.js"></script>
   
-  <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="icon" href="favicon.png">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -130,7 +132,7 @@
 <body>
   <div id="root"></div>
 
-  <script type="text/babel">
+  <script type="text/babel" data-presets="react-classic">
     const { useState, useEffect, useRef } = React;
 
     // --- アプリのデータ定義 ---
@@ -142,7 +144,7 @@
       { id: 5, name: '秋田県', kana: 'あきたけん', region: '北海道・東北', x: 13, y: 5, w: 1, h: 1 },
       { id: 6, name: '山形県', kana: 'やまがたけん', region: '北海道・東北', x: 13, y: 6, w: 1, h: 1 },
       { id: 7, name: '福島県', kana: 'ふくしまけん', region: '北海道・東北', x: 14, y: 7, w: 1, h: 1 },
-      { id: 8, name: '茨城県', kana: 'いばらきけん', region: '関東', x: 15, y: 8, w: 1, h: 2 },
+      { id: 8, name: '茨城県', kana: 'いしかわけん', region: '関東', x: 15, y: 8, w: 1, h: 2 },
       { id: 9, name: '栃木県', kana: 'とちぎけん', region: '関東', x: 14, y: 8, w: 1, h: 1 },
       { id: 10, name: '群馬県', kana: 'ぐんまけん', region: '関東', x: 13, y: 8, w: 1, h: 1 },
       { id: 11, name: '埼玉県', kana: 'さいたまけん', region: '関東', x: 13, y: 9, w: 1, h: 1 },
@@ -289,7 +291,7 @@
           const translate = [width / 2 - scale * x, height / 2 - scale * y];
 
           g.transition()
-            .delay(600)    
+            .delay(600)   
             .duration(1500) 
             .ease(d3.easeCubicInOut)
             .attr("transform", `translate(${translate[0]},${translate[1]}) scale(${scale})`);
